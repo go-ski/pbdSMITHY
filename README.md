@@ -1,4 +1,5 @@
 pbdSMITHY
 =========
 
-Build scripts and formulas for installing R and pbd on clusters with http://anthonydigirolamo.github.io/smithy/
+Build formula for installing R and pbdR packages on clusters with smithy:
+http://anthonydigirolamo.github.io/smithy/

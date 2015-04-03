@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 class RFormula < Formula
   homepage "http://www.r-project.org"
   url "http://mirrors.nics.utk.edu/cran/src/base/R-3/R-3.1.3.tar.gz"
@@ -11,7 +10,8 @@ class RFormula < Formula
                    "load szip",
                    "load acml/5.3.0",
                    "load sprng",
-                   "load netcdf-parallel"
+                   "load netcdf-parallel",
+                   "load zeromq"
                   ]
   def install
     r_home = "#{prefix}/lib64/R"
@@ -59,6 +59,28 @@ class RFormula < Formula
       system "mv #{r_home}/lib/libRblas.so #{r_home}/lib/libRblas.so.keep"
       system "ln -s #{acml_lib}/libacml_mp.so #{r_home}/lib/libRblas.so"
     end
+
+    # Patch rzmq package. Patch needed to find zeromq include and lib.
+    #   Didn't work via CPPFLAGS and LD_LIBRARY_PATH, so patching PKG_CPPFLAGS
+    #   and PKG_LIBS. There must be an easier way to do this!
+    rzmq_file = "rzmq_0.7.7.tar.gz"
+    system "wget http://mirrors.nics.utk.edu/cran/src/contrib/#{rzmq_file}"
+    zeromq_dir = module_environment_variable("zeromq", "ZEROMQ_DIR")
+    system "tar -xvzf #{rzmq_file}"
+    # note that ./ was added in the generated diff file below
+    patch <<-EOF.strip_heredoc
+      diff -rupN ./rzmq/src/Makevars ./rzmq_p/src/Makevars
+      --- ./rzmq/src/Makevars	2014-12-04 11:01:48.000000000 -0500
+      +++ ./rzmq_p/src/Makevars	2014-12-04 11:01:48.000000000 -0500
+      @@ -1,5 +1,5 @@
+       ## -*- mode: makefile; -*-
+       
+       CXX_STD = CXX11
+      -PKG_CPPFLAGS = -I../inst/cppzmq
+      -PKG_LIBS = -lzmq
+      +PKG_CPPFLAGS = -I../inst/cppzmq -I#{zeromq_dir}/include
+      +PKG_LIBS = -L#{zeromq_dir}/lib -lzmq      
+    EOF
     
     # Install several optional packages, including pbdR for SPMD:
     File.open("pInstall", "w+") do |f|
@@ -86,7 +108,10 @@ class RFormula < Formula
                                       " --with-mpi=", ompidir, sep=""))
             install.packages(pkgs=pkgs, configure.args=config)
 
-            # Now install pbdR packages from GitHub:
+            ## install rmzq (for pbdCS) from patched source tree
+            install.packages(pkgs="rzmq", repos=NULL)
+
+            ## Now install pbdR packages from GitHub:
             library(devtools)
             install_github(repo="wrathematics/RNACI") 
             install_github(repo="RBigData/pbdMPI") 
@@ -96,41 +121,49 @@ class RFormula < Formula
             install_github(repo="RBigData/pbdBASE") 
             install_github(repo="RBigData/pbdDMAT") 
             install_github(repo="RBigData/pbdDEMO")
+            install_github(repo="wrathematics/pbdCS")
           }
         BP()
       EOF
     end
     system "#{r_home}/bin/Rscript pInstall"
- 
   end
   
   modulefile <<-MODULEFILE.strip_heredoc
     #%Module
     # R with parallel support
     set version <%= @package.version %>
-    proc ModulesHelp { } {
-       puts stderr "Sets up environment to use R $version with ACML."
-       puts stderr "Interactive Use:   R"
-       puts stderr "Parallel Batch Use (see r-pbd.org) via mpirun Rscript"
-    }
 
-    module swap PE-intel PE-gnu
-    puts stderr "module swap PE-intel PE-gnu"
-    module load acml
-    module list
-    set ompidir {$OMPI_DIR}
-    
     set machine redhat6
-    set rdir /sw/$machine/r/$version/rhel6_gnu4.7.1
+    set rbase /sw/$machine/r/$version
+    set rdir $rbase/rhel6_gnu4.7.1
     set rhome $rdir/lib64/R
-    
-    prepend-path PATH             $rhome/bin
-    prepend-path LD_LIBRARY_PATH  $ompidir/lib
-    prepend-path LD_LIBRARY_PATH  $rhome/lib
-    prepend-path INCLUDE_PATH     $rhome/include
-    setenv OMP_NUM_THREADS 1
 
-    puts stderr "Parallel Batch Use (see r-pbd.org) via mpirun Rscript."
-    puts stderr "OMP_NUM_THREADS set to 1. Change as needed to use ACML."
+    if [ is-loaded PE-pathscale ] {
+      puts stderr "The pathscale version of $rbase is not available."
+      exit
+    } elseif [ is-loaded PE-pgi ] {
+      puts stderr "The pgi version of $rbase is not available."
+      exit
+    } elseif [ is-loaded PE-intel ] {
+      puts stderr "The intel version of $rbase is not available."
+      exit
+    } elseif [ is-loaded PE-cray ] {
+      puts stderr "The xk6 version of $rbase is not available."
+      exit
+    } elseif [ is-loaded PE-gnu ] {
+      module load acml
+      set ompidir {$OMPI_DIR}
+      prepend-path PATH             $rhome/bin
+      prepend-path LD_LIBRARY_PATH  $ompidir/lib
+      prepend-path LD_LIBRARY_PATH  $rhome/lib
+      prepend-path INCLUDE_PATH     $rhome/include
+      setenv OMP_NUM_THREADS 1
+      puts stderr "Parallel Batch Use (see r-pbd.org) via mpirun Rscript."
+      puts stderr "OMP_NUM_THREADS set to 1. Change as needed to use ACML."
+    } else {
+       puts stderr "The current PE version of $rbase is not available."
+       exit
+    }
   MODULEFILE
 end

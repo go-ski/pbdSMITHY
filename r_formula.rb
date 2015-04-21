@@ -117,7 +117,6 @@ class RFormula < Formula
             install_github(repo="RBigData/pbdMPI") 
             install_github(repo="RBigData/pbdSLAP") 
             install_github(repo="RBigData/pbdNCDF4") 
-            install_github(repo="RBigData/pbdNCDF4") 
             install_github(repo="RBigData/pbdBASE") 
             install_github(repo="RBigData/pbdDMAT") 
             install_github(repo="RBigData/pbdDEMO")
